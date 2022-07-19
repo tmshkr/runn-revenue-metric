@@ -16,10 +16,8 @@ async function getProjectRevenue(start_year, end_year) {
   );
 
   // Fetch and cache resources
-  const projects = await getAllProjects().then(async (projects) => {
-    await Promise.all(projects.map(({ id }) => getProjectById(id)));
-    return projects;
-  });
+  const projects = await getAllProjects();
+  await Promise.all(projects.map(({ id }) => getProjectById(id)));
   await getAllRoles();
 
   // Iterate through projects
@@ -47,6 +45,7 @@ async function getProjectRevenue(start_year, end_year) {
         const { standard_rate } = await getRoleById(role_id);
         rate = Number(standard_rate);
       }
+      const revenuePerDay = (minutes_per_day / 60) * rate;
 
       // Iterate through each day of the assignment to add revenue for that day
       for (
@@ -57,9 +56,8 @@ async function getProjectRevenue(start_year, end_year) {
         // Skip weekends unless assignment.non_working_day is true
         if ((d.day() > 0 && d.day() < 6) || non_working_day) {
           const period = d.format(formatString);
-          const revenue = (minutes_per_day / 60) * rate;
           if (period in result[id]) {
-            result[id][period].projectRevenue += revenue;
+            result[id][period].projectRevenue += revenuePerDay;
           }
         }
       }
