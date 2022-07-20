@@ -7,7 +7,7 @@ const { getPeriods } = require("./utils/period");
 
 async function getProjectRevenue(start_year, end_year) {
   const result = {};
-  const metrics = ["projectRevenue"];
+  const metrics = ["operatingRevenue", "budgetAllocation", "budgetDifference"];
   const { periods, formatString } = getPeriods(
     start_year,
     end_year,
@@ -15,15 +15,15 @@ async function getProjectRevenue(start_year, end_year) {
     "month"
   );
 
-  // Fetch and cache resources
   const projects = await getAllProjects();
   await Promise.all(projects.map(({ id }) => getProjectById(id)));
   await getAllRoles();
 
-  // Iterate through projects
+  // First find the operatingRevenue based on hourly_rates
   for (const { id } of projects) {
     const project = await getProjectById(id);
     result[id] = _.cloneDeep(periods);
+    let totalRevenue = 0;
 
     // Iterate through project's assignments
     for (const assignment of project.assignments) {
@@ -57,16 +57,64 @@ async function getProjectRevenue(start_year, end_year) {
         if ((d.day() > 0 && d.day() < 6) || non_working_day) {
           const period = d.format(formatString);
           if (period in result[id]) {
-            result[id][period].projectRevenue += revenuePerDay;
+            result[id][period].operatingRevenue += revenuePerDay;
+          }
+          totalRevenue += revenuePerDay;
+        }
+      }
+    }
+
+    // Then find the budgetAllocation based on the efferctiveRate
+    for (const assignment of project.assignments) {
+      if (!assignment.is_billable) continue;
+      const {
+        role_id,
+        start_date,
+        end_date,
+        minutes_per_day,
+        non_working_day,
+      } = assignment;
+
+      // Get rate from project_rates, or the role's standard_rate
+      // if there is no project_rate for that role
+      let rate;
+      if (role_id in project.projectRatesByRoleId) {
+        rate = Number(project.projectRatesByRoleId[role_id].rate_hourly);
+      } else {
+        const { standard_rate } = await getRoleById(role_id);
+        rate = Number(standard_rate);
+      }
+      const effectiveRate = rate * (Number(project.budget) / totalRevenue);
+      const allocationPerDay = (minutes_per_day / 60) * effectiveRate;
+
+      // Iterate through each day of the assignment to add allocationPerDay
+      for (
+        let d = dayjs(start_date);
+        d.isSameOrBefore(end_date);
+        d = d.add(1, "day")
+      ) {
+        // Skip weekends unless assignment.non_working_day is true
+        if ((d.day() > 0 && d.day() < 6) || non_working_day) {
+          const period = d.format(formatString);
+          if (period in result[id]) {
+            result[id][period].budgetAllocation += allocationPerDay;
           }
         }
       }
+    }
+
+    for (const period in result[id]) {
+      result[id][period].budgetDifference =
+        result[id][period].operatingRevenue -
+        result[id][period].budgetAllocation;
     }
   }
 
   // Print results
   for (const { id, name } of projects) {
-    console.log(`${id} - ${name}`);
+    const title = `${id} - ${name}`;
+    console.log(new Array(title.length).fill("=").join(""));
+    console.log(title);
     console.log(result[id]);
   }
 }
