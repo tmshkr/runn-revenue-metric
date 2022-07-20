@@ -64,7 +64,7 @@ async function getProjectRevenue(start_year, end_year) {
       }
     }
 
-    // Then find the budgetAllocation based on the efferctiveRate
+    // Then find the budgetAllocation based on the effectiveRate
     for (const assignment of project.assignments) {
       if (!assignment.is_billable) continue;
       const {
